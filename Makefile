@@ -140,15 +140,17 @@ build: setup-env test-wifi-defaults $(KERNEL_SEED) $(WORK_DIR)/.imagebuilder-mt3
 		} > "/repo/dist/build-info.txt"'
 
 test-wifi-defaults:
-	@sh -n "$(ROOTFS_OVERLAY)/etc/uci-defaults/99-mt3000-wifi-defaults"
-	@test -x "$(ROOTFS_OVERLAY)/etc/uci-defaults/99-mt3000-wifi-defaults"
 	@test -x "$(ROOTFS_OVERLAY)/usr/bin/mt798x-board-info"
 	@test -x "$(ROOTFS_OVERLAY)/usr/bin/mt3000-factory-wifi"
-	@grep -R "GL-MT3000" "$(ROOTFS_OVERLAY)/etc/uci-defaults/99-mt3000-wifi-defaults" "$(ROOTFS_OVERLAY)/lib/wifi" >/dev/null
-	@if grep -R "ImmortalWrt-5G" "$(ROOTFS_OVERLAY)/etc/uci-defaults" "$(ROOTFS_OVERLAY)/lib/wifi" >/dev/null; then \
-		echo "ERROR: overlay still contains ImmortalWrt-5G" >&2; \
-		exit 1; \
-	fi
+	@test -f "$(ROOTFS_OVERLAY)/etc/uci-defaults/99-mt3000-wifi-defaults"
+	@test ! -e "$(ROOTFS_OVERLAY)/lib/wifi/mtwifi.sh"
+	@test ! -e "$(ROOTFS_OVERLAY)/lib/wifi/mtwifi.uc"
+	@grep -q "wifi config" "$(ROOTFS_OVERLAY)/etc/uci-defaults/99-mt3000-wifi-defaults"
+	@grep -q "wireless.\$$iface.disabled=0" "$(ROOTFS_OVERLAY)/etc/uci-defaults/99-mt3000-wifi-defaults"
+	@grep -q "wireless.\$$iface.mode=ap" "$(ROOTFS_OVERLAY)/etc/uci-defaults/99-mt3000-wifi-defaults"
+	@grep -q "wireless.\$$iface.ssid=\$$ssid" "$(ROOTFS_OVERLAY)/etc/uci-defaults/99-mt3000-wifi-defaults"
+	@! grep -R "ImmortalWrt-5G" "$(ROOTFS_OVERLAY)"
+
 
 checksums:
 	@sha256sum "$(FINAL_IMAGE)"

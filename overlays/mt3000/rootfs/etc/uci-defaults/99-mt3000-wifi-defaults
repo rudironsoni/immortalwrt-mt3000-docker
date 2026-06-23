@@ -8,7 +8,7 @@ log() {
 }
 
 board_name() {
-	ubus call system board 2>/dev/null | jsonfilter -e '@.board_name' 2>/dev/null
+	cat /tmp/sysinfo/board_name 2>/dev/null
 }
 
 is_mt3000() {
@@ -17,6 +17,7 @@ is_mt3000() {
 			return 0
 			;;
 	esac
+
 	return 1
 }
 
@@ -26,75 +27,154 @@ valid_key() {
 			return 1
 			;;
 	esac
+
 	[ ${#1} -ge 8 ] && [ ${#1} -le 63 ]
 }
 
-iface_device() {
-	uci -q get "wireless.$1.device" 2>/dev/null
+helper_value() {
+	local cmd="$1"
+	local fallback="$2"
+	local value
+
+	if [ -x "$board_info" ]; then
+		value="$("$board_info" "$cmd" 2>/dev/null | tr -d '\r\n')"
+	fi
+
+	[ -n "$value" ] && {
+		printf '%s\n' "$value"
+		return
+	}
+
+	printf '%s\n' "$fallback"
+}
+
+derive_fallback_ssid() {
+	local mac suffix
+
+	for path in /sys/class/net/eth0/address /sys/class/net/eth1/address /sys/class/net/br-lan/address; do
+		mac="$(cat "$path" 2>/dev/null | tr -d ':\r\n' | tr 'A-F' 'a-f')"
+		[ ${#mac} -ge 3 ] || continue
+
+		suffix="${mac#?????????}"
+		[ -n "$suffix" ] && {
+			printf 'GL-MT3000-%s\n' "$suffix"
+			return
+		}
+	done
+
+	printf 'GL-MT3000\n'
+}
+
+derive_fallback_key() {
+	local mac
+
+	for path in /sys/class/net/eth0/address /sys/class/net/eth1/address /sys/class/net/br-lan/address; do
+		mac="$(cat "$path" 2>/dev/null | tr -d ':\r\n' | tr 'a-f' 'A-F')"
+		[ ${#mac} -eq 12 ] || continue
+		printf 'MT3000%s\n' "$mac"
+		return
+	done
+
+	printf 'MT3000OPEN\n'
+}
+
+ensure_wireless_config() {
+	[ -s /etc/config/wireless ] && return 0
+
+	log "wireless config missing; running wifi config"
+	wifi config >/tmp/mt3000-wifi-config.log 2>&1
 }
 
 radio_band() {
 	local radio="$1"
 	local band
+	local path
 
-	band="$(uci -q get "wireless.$radio.band" 2>/dev/null)"
+	band="$(uci -q get "wireless.$radio.band")"
 	[ -n "$band" ] && {
 		printf '%s\n' "$band"
 		return
 	}
 
-	case "$radio" in
-		*5*|*rax*|MT7981_1_2|wifi1|radio1)
-			printf '%s\n' "5g"
+	path="$(uci -q get "wireless.$radio.path")"
+	case "$radio $path" in
+		*5g*|*5G*|*rax*|*MT7981_1_2*|*wifi1*|*radio1*)
+			printf '5g\n'
 			;;
 		*)
-			printf '%s\n' "2g"
+			printf '2g\n'
 			;;
 	esac
 }
 
-repair_iface() {
+ensure_iface() {
 	local iface="$1"
-	local device band
+	local radio="$2"
+	local ssid="$3"
+	local key="$4"
+	local band
 
-	device="$(iface_device "$iface")"
-	[ -n "$device" ] || return 0
+	[ -n "$iface" ] && [ -n "$radio" ] || return 1
 
-	band="$(radio_band "$device")"
-	case "$band" in
-		2g|5g)
-			;;
-		*)
-			return 0
-			;;
-	esac
+	band="$(radio_band "$radio")"
 
-	uci -q set "wireless.$iface.ssid=$ssid"
+	uci -q set "wireless.$iface=wifi-iface"
+	uci -q set "wireless.$iface.device=$radio"
+	uci -q set "wireless.$iface.mode=ap"
 	uci -q set "wireless.$iface.network=lan"
+	uci -q set "wireless.$iface.ssid=$ssid"
+	uci -q set "wireless.$iface.disabled=0"
 
-	if valid_key "$wifi_key"; then
+	if valid_key "$key"; then
 		uci -q set "wireless.$iface.encryption=psk2"
-		uci -q set "wireless.$iface.key=$wifi_key"
+		uci -q set "wireless.$iface.key=$key"
 	else
 		uci -q set "wireless.$iface.encryption=none"
 		uci -q delete "wireless.$iface.key"
 	fi
 
-	log "repaired iface=$iface device=$device band=$band ssid=$ssid encryption=$(uci -q get "wireless.$iface.encryption") key_len=${#wifi_key}"
+	log "configured iface=$iface radio=$radio band=$band ssid=$ssid key_present=$([ -n "$key" ] && echo yes || echo no)"
+}
+
+repair_wifi_defaults() {
+	local ssid key key_source
+	local radios radio iface ifaces configured
+
+	ssid="$(helper_value wifi-ssid "$(derive_fallback_ssid)")"
+	key="$(helper_value wifi-key "$(derive_fallback_key)")"
+	key_source="factory_or_fallback"
+
+	if ! valid_key "$key"; then
+		key=""
+		key_source="open_no_valid_key"
+	fi
+
+	radios="$(uci -q show wireless | sed -n "s/^wireless\\.\\([^.=]*\\)=wifi-device$/\\1/p")"
+
+	for radio in $radios; do
+		uci -q set "wireless.$radio.disabled=0"
+
+		ifaces="$(uci -q show wireless | sed -n "s/^wireless\\.\\([^.=]*\\)\\.device='$radio'$/\\1/p;s/^wireless\\.\\([^.=]*\\)\\.device=$radio$/\\1/p")"
+		if [ -z "$ifaces" ]; then
+			iface="default_${radio}"
+			ensure_iface "$iface" "$radio" "$ssid" "$key"
+			configured=$((configured + 1))
+			continue
+		fi
+
+		for iface in $ifaces; do
+			ensure_iface "$iface" "$radio" "$ssid" "$key"
+			configured=$((configured + 1))
+		done
+	done
+
+	uci commit wireless
+	log "committed wireless defaults ssid=$ssid key_source=$key_source iface_count=${configured:-0}"
 }
 
 is_mt3000 || exit 0
 
-ssid="$("$board_info" wifi-ssid 2>/dev/null)"
-[ -n "$ssid" ] || ssid="GL-MT3000"
-
-wifi_key="$("$board_info" wifi-key 2>/dev/null)"
-
-for iface in $(uci -q show wireless 2>/dev/null | sed -n "s/^wireless\\.\\([^.=]*\\)=wifi-iface$/\\1/p"); do
-	repair_iface "$iface"
-done
-
-uci -q commit wireless
-wifi reload 2>/dev/null || wifi up 2>/dev/null || true
+ensure_wireless_config
+repair_wifi_defaults
 
 exit 0
