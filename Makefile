@@ -13,6 +13,8 @@ PROFILE := glinet_gl-mt3000
 IMAGEBUILDER_NAME := immortalwrt-imagebuilder-$(RELEASE)-$(TARGET_FLAT).Linux-x86_64
 IMAGEBUILDER_ARCHIVE := $(IMAGEBUILDER_NAME).tar.zst
 IMAGEBUILDER_URL := https://downloads.immortalwrt.org/releases/$(RELEASE)/targets/$(TARGET)/$(IMAGEBUILDER_ARCHIVE)
+DOWNLOAD_BASE := https://downloads.immortalwrt.org/releases/$(RELEASE)/targets/$(TARGET)
+INITRAMFS_UPSTREAM := immortalwrt-$(RELEASE)-$(TARGET_FLAT)-$(PROFILE)-initramfs-kernel.bin
 
 DOCKER_IMAGE := mt3000-imagebuilder:bookworm
 WORK_DIR := $(ROOT)/.work
@@ -21,6 +23,7 @@ DIST_DIR := $(ROOT)/dist
 ROOTFS_OVERLAY := $(ROOT)/overlays/mt3000/rootfs
 PACKAGE_LIST := $(ROOT)/overlays/travel-router/packages
 FINAL_IMAGE := $(DIST_DIR)/mt3000-travel-router-sysupgrade.bin
+INITRAMFS_IMAGE := $(DIST_DIR)/mt3000-travel-router-initramfs-kernel.bin
 BUILD_INFO := $(DIST_DIR)/build-info.txt
 KERNEL_SEED := $(WORK_DIR)/glinet_gl-mt3000-kernel.bin
 IMAGEBUILDER_KERNEL_DIR := build_dir/target-aarch64_cortex-a53_musl/linux-mediatek_filogic
@@ -30,7 +33,7 @@ DOCKER_RUN := docker run --rm --platform linux/amd64 \
 	-w /repo \
 	$(DOCKER_IMAGE)
 
-.PHONY: setup-env build test-wifi-defaults clean-work checksums
+.PHONY: setup-env build test-wifi-defaults clean-work checksums initramfs-kernel
 
 setup-env: $(WORK_DIR)/.setup-complete
 
@@ -98,7 +101,7 @@ $(KERNEL_SEED):
 	echo "Build the base upstream GL-MT3000 target once, then rerun make build." >&2; \
 	exit 1
 
-build: setup-env test-wifi-defaults $(KERNEL_SEED) $(WORK_DIR)/.imagebuilder-mt3000-patched
+build: setup-env test-wifi-defaults $(KERNEL_SEED) $(WORK_DIR)/.imagebuilder-mt3000-patched $(INITRAMFS_IMAGE)
 	@rm -rf "$(DIST_DIR)"
 	@mkdir -p "$(DIST_DIR)"
 	@$(DOCKER_RUN) bash -lc '\
@@ -152,8 +155,19 @@ test-wifi-defaults:
 	@! grep -R "ImmortalWrt-5G" "$(ROOTFS_OVERLAY)"
 
 
+initramfs-kernel: $(INITRAMFS_IMAGE)
+
+$(INITRAMFS_IMAGE):
+	@mkdir -p "$(DIST_DIR)" "$(WORK_DIR)"
+	@echo "Downloading $(INITRAMFS_UPSTREAM)"
+	@curl -fsSL "$(DOWNLOAD_BASE)/sha256sums" -o "$(WORK_DIR)/sha256sums"
+	@curl -fsSL "$(DOWNLOAD_BASE)/$(INITRAMFS_UPSTREAM)" -o "$(WORK_DIR)/$(INITRAMFS_UPSTREAM)"
+	@cd "$(WORK_DIR)" && grep "[ *]$(INITRAMFS_UPSTREAM)$$" sha256sums | shasum -a 256 -c -
+	@cp "$(WORK_DIR)/$(INITRAMFS_UPSTREAM)" "$(INITRAMFS_IMAGE)"
+
 checksums:
-	@sha256sum "$(FINAL_IMAGE)"
+	@cd "$(DIST_DIR)" && shasum -a 256 mt3000-travel-router-sysupgrade.bin mt3000-travel-router-initramfs-kernel.bin > sha256sums
+	@cat "$(DIST_DIR)/sha256sums"
 
 clean-work:
 	@rm -rf "$(WORK_DIR)" "$(DIST_DIR)"
