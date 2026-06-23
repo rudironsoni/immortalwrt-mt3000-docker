@@ -1,0 +1,7 @@
+.work/
+dist/
+bin/
+.serena/
+immortalwrt-mt798x-rebase/
+openwrt-mt3000-reference/
+openwrt-mt798x-reference/

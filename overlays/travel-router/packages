@@ -1,0 +1,75 @@
+# GL-MT3000 travel-router package set for ImageBuilder.
+#
+# Keep this as plain package names, one per line. Prefix packages to remove
+# with "-". The Makefile flattens this file into ImageBuilder PACKAGES.
+
+# Replace the default WPA variant with OpenSSL-backed full wpad.
+-wpad-basic-mbedtls
+-wpad-basic-wolfssl
+wpad-openssl
+
+# Fibocom FM350 and USB modem support.
+modemmanager
+luci-proto-modemmanager
+libqmi
+qmi-utils
+uqmi
+umbim
+usb-modeswitch
+usbutils
+kmod-usb-net-cdc-mbim
+kmod-usb-net-qmi-wwan
+kmod-usb-serial-option
+kmod-usb-serial-wwan
+kmod-usb-acm
+
+# Travel-router uplinks and failover.
+travelmate
+luci-app-travelmate
+kmod-usb-net-rndis
+kmod-usb-net-cdc-ether
+kmod-usb-net-ipheth
+
+# VPN.
+wireguard-tools
+kmod-wireguard
+luci-proto-wireguard
+openvpn-openssl
+luci-app-openvpn
+tailscale
+
+# QoS, DNS, security, and monitoring.
+mwan3
+luci-app-mwan3
+sqm-scripts
+luci-app-sqm
+adblock
+luci-app-adblock
+banip
+luci-app-banip
+https-dns-proxy
+luci-app-https-dns-proxy
+nlbwmon
+luci-app-nlbwmon
+irqbalance
+
+# USB storage and sharing.
+block-mount
+kmod-usb-storage
+kmod-fs-exfat
+kmod-fs-ext4
+kmod-fs-ntfs3
+e2fsprogs
+f2fs-tools
+fdisk
+ksmbd-server
+luci-app-ksmbd
+
+# Debug and maintenance.
+curl
+ca-bundle
+ca-certificates
+ip-full
+tcpdump
+iperf3
+luci-app-attendedsysupgrade

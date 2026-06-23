@@ -1,0 +1,4 @@
+[submodule "upstream/immortalwrt-mt798x-rebase"]
+	path = upstream/immortalwrt-mt798x-rebase
+	url = https://github.com/chasey-dev/immortalwrt-mt798x-rebase.git
+	branch = 25.12

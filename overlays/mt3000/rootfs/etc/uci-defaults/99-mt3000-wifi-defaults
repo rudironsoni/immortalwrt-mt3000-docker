@@ -1,0 +1,100 @@
+#!/bin/sh
+
+log_tag="mt3000-wifi-defaults"
+board_info="/usr/bin/mt798x-board-info"
+
+log() {
+	logger -t "$log_tag" "$*"
+}
+
+board_name() {
+	ubus call system board 2>/dev/null | jsonfilter -e '@.board_name' 2>/dev/null
+}
+
+is_mt3000() {
+	case "$(board_name)" in
+		glinet,gl-mt3000|glinet,mt3000-snand)
+			return 0
+			;;
+	esac
+	return 1
+}
+
+valid_key() {
+	case "$1" in
+		*[!A-Za-z0-9]*|'')
+			return 1
+			;;
+	esac
+	[ ${#1} -ge 8 ] && [ ${#1} -le 63 ]
+}
+
+iface_device() {
+	uci -q get "wireless.$1.device" 2>/dev/null
+}
+
+radio_band() {
+	local radio="$1"
+	local band
+
+	band="$(uci -q get "wireless.$radio.band" 2>/dev/null)"
+	[ -n "$band" ] && {
+		printf '%s\n' "$band"
+		return
+	}
+
+	case "$radio" in
+		*5*|*rax*|MT7981_1_2|wifi1|radio1)
+			printf '%s\n' "5g"
+			;;
+		*)
+			printf '%s\n' "2g"
+			;;
+	esac
+}
+
+repair_iface() {
+	local iface="$1"
+	local device band
+
+	device="$(iface_device "$iface")"
+	[ -n "$device" ] || return 0
+
+	band="$(radio_band "$device")"
+	case "$band" in
+		2g|5g)
+			;;
+		*)
+			return 0
+			;;
+	esac
+
+	uci -q set "wireless.$iface.ssid=$ssid"
+	uci -q set "wireless.$iface.network=lan"
+
+	if valid_key "$wifi_key"; then
+		uci -q set "wireless.$iface.encryption=psk2"
+		uci -q set "wireless.$iface.key=$wifi_key"
+	else
+		uci -q set "wireless.$iface.encryption=none"
+		uci -q delete "wireless.$iface.key"
+	fi
+
+	log "repaired iface=$iface device=$device band=$band ssid=$ssid encryption=$(uci -q get "wireless.$iface.encryption") key_len=${#wifi_key}"
+}
+
+is_mt3000 || exit 0
+
+ssid="$("$board_info" wifi-ssid 2>/dev/null)"
+[ -n "$ssid" ] || ssid="GL-MT3000"
+
+wifi_key="$("$board_info" wifi-key 2>/dev/null)"
+
+for iface in $(uci -q show wireless 2>/dev/null | sed -n "s/^wireless\\.\\([^.=]*\\)=wifi-iface$/\\1/p"); do
+	repair_iface "$iface"
+done
+
+uci -q commit wireless
+wifi reload 2>/dev/null || wifi up 2>/dev/null || true
+
+exit 0
