@@ -1,0 +1,59 @@
+#!/bin/sh
+
+set -u
+
+BOARD_LIB="${MT798X_BOARD_LIB:-/lib/functions/mt798x-board.sh}"
+
+if [ ! -r "$BOARD_LIB" ]; then
+	echo "Missing board helper library: $BOARD_LIB" >&2
+	exit 1
+fi
+
+. "$BOARD_LIB"
+
+usage() {
+	cat <<'EOF'
+Usage: mt3000-factory-wifi <command>
+
+Commands:
+  ssid-2g       print 2.4 GHz SSID
+  ssid-5g       print 5 GHz SSID
+  key           print Wi-Fi key for first-boot consumers
+  country       print Wi-Fi country code
+  fallback-key  print fallback key, empty when no valid factory key exists
+  summary       print non-secret Wi-Fi default summary
+EOF
+}
+
+case "${1:-}" in
+ssid-2g)
+	mt798x_ssid_2g
+	;;
+ssid-5g)
+	mt798x_ssid_5g
+	;;
+key)
+	mt798x_wifi_key
+	;;
+country)
+	mt798x_country_code
+	;;
+fallback-key)
+	mt798x_wifi_key 2>/dev/null || true
+	;;
+summary)
+	printf 'model=%s\n' "$(mt798x_model_code)"
+	printf 'label_mac_present=%s\n' "$(mt798x_label_mac >/dev/null 2>&1 && echo yes || echo no)"
+	printf 'ssid_2g=%s\n' "$(mt798x_ssid_2g)"
+	printf 'ssid_5g=%s\n' "$(mt798x_ssid_5g)"
+	printf 'country=%s\n' "$(mt798x_country_code)"
+	printf 'key_source=%s\n' "$(mt798x_wifi_key_source)"
+	;;
+''|-h|--help|help)
+	usage
+	;;
+*)
+	usage >&2
+	exit 1
+	;;
+esac

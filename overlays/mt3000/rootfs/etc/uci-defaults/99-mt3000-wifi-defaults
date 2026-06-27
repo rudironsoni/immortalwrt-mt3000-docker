@@ -13,9 +13,9 @@ board_name() {
 
 is_mt3000() {
 	case "$(board_name)" in
-		glinet,gl-mt3000|glinet,mt3000-snand)
-			return 0
-			;;
+	glinet,gl-mt3000|glinet,mt3000-snand)
+		return 0
+		;;
 	esac
 
 	return 1
@@ -23,9 +23,9 @@ is_mt3000() {
 
 valid_key() {
 	case "$1" in
-		*[!A-Za-z0-9]*|'')
-			return 1
-			;;
+	''|*[!A-Za-z0-9]*)
+		return 1
+		;;
 	esac
 
 	[ ${#1} -ge 8 ] && [ ${#1} -le 63 ]
@@ -33,78 +33,55 @@ valid_key() {
 
 helper_value() {
 	local cmd="$1"
-	local fallback="$2"
 	local value
 
 	if [ -x "$board_info" ]; then
 		value="$("$board_info" "$cmd" 2>/dev/null | tr -d '\r\n')"
 	fi
 
-	[ -n "$value" ] && {
-		printf '%s\n' "$value"
-		return
-	}
-
-	printf '%s\n' "$fallback"
+	[ -n "$value" ] && printf '%s\n' "$value"
 }
 
-derive_fallback_ssid() {
-	local mac suffix
+fallback_ssid() {
+	local mac path suffix
 
 	for path in /sys/class/net/eth0/address /sys/class/net/eth1/address /sys/class/net/br-lan/address; do
 		mac="$(cat "$path" 2>/dev/null | tr -d ':\r\n' | tr 'A-F' 'a-f')"
 		[ ${#mac} -ge 3 ] || continue
-
 		suffix="${mac#?????????}"
-		[ -n "$suffix" ] && {
-			printf 'GL-MT3000-%s\n' "$suffix"
-			return
-		}
+		printf 'GL-MT3000-%s\n' "$suffix"
+		return 0
 	done
 
 	printf 'GL-MT3000\n'
 }
 
-derive_fallback_key() {
-	local mac
-
-	for path in /sys/class/net/eth0/address /sys/class/net/eth1/address /sys/class/net/br-lan/address; do
-		mac="$(cat "$path" 2>/dev/null | tr -d ':\r\n' | tr 'a-f' 'A-F')"
-		[ ${#mac} -eq 12 ] || continue
-		printf 'MT3000%s\n' "$mac"
-		return
-	done
-
-	printf 'MT3000OPEN\n'
-}
-
 ensure_wireless_config() {
-	[ -s /etc/config/wireless ] && return 0
+	uci -q show wireless >/dev/null 2>&1 && return 0
 
-	log "wireless config missing; running wifi config"
-	wifi config >/tmp/mt3000-wifi-config.log 2>&1
+	if command -v wifi >/dev/null 2>&1; then
+		wifi config >/dev/null 2>&1 || true
+	fi
 }
 
 radio_band() {
 	local radio="$1"
-	local band
-	local path
+	local band path phy
 
 	band="$(uci -q get "wireless.$radio.band")"
 	[ -n "$band" ] && {
 		printf '%s\n' "$band"
-		return
+		return 0
 	}
 
-	path="$(uci -q get "wireless.$radio.path")"
-	case "$radio $path" in
-		*5g*|*5G*|*rax*|*MT7981_1_2*|*wifi1*|*radio1*)
-			printf '5g\n'
-			;;
-		*)
-			printf '2g\n'
-			;;
-	esac
+	phy="$(uci -q get "wireless.$radio.phy")"
+	for path in "/sys/class/ieee80211/$phy/name" "/sys/class/ieee80211/$phy/index"; do
+		[ -r "$path" ] || continue
+		cat "$path" 2>/dev/null
+		return 0
+	done
+
+	printf 'unknown\n'
 }
 
 ensure_iface() {
@@ -137,19 +114,21 @@ ensure_iface() {
 }
 
 repair_wifi_defaults() {
-	local ssid key key_source
-	local radios radio iface ifaces configured
+	local ssid key key_source radios radio iface ifaces configured
 
-	ssid="$(helper_value wifi-ssid "$(derive_fallback_ssid)")"
-	key="$(helper_value wifi-key "$(derive_fallback_key)")"
-	key_source="factory_or_fallback"
+	ssid="$(helper_value ssid-2g)"
+	[ -n "$ssid" ] || ssid="$(fallback_ssid)"
+
+	key="$(helper_value wifi-key)"
+	key_source="factory"
 
 	if ! valid_key "$key"; then
 		key=""
-		key_source="open_no_valid_key"
+		key_source="none_open"
 	fi
 
 	radios="$(uci -q show wireless | sed -n "s/^wireless\\.\\([^.=]*\\)=wifi-device$/\\1/p")"
+	configured=0
 
 	for radio in $radios; do
 		uci -q set "wireless.$radio.disabled=0"
@@ -169,11 +148,10 @@ repair_wifi_defaults() {
 	done
 
 	uci commit wireless
-	log "committed wireless defaults ssid=$ssid key_source=$key_source iface_count=${configured:-0}"
+	log "committed wireless defaults ssid=$ssid key_source=$key_source iface_count=$configured"
 }
 
 is_mt3000 || exit 0
-
 ensure_wireless_config
 repair_wifi_defaults
 

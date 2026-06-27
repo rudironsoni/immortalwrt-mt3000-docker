@@ -1,14 +1,14 @@
-# GL-MT3000 travel-router package set for ImageBuilder.
+# GL-MT3000 travel-router package set.
 #
-# Keep this as plain package names, one per line. Prefix packages to remove
-# with "-". The Makefile flattens this file into ImageBuilder PACKAGES.
+# Keep plain package names, one per line. Prefix package names with "-"
+# to force a package off in the generated source-build .config.
 
-# Replace the default WPA variant with OpenSSL-backed full wpad.
+# Replace default WPA variant with OpenSSL-backed full wpad.
 -wpad-basic-mbedtls
 -wpad-basic-wolfssl
 wpad-openssl
 
-# Fibocom FM350 and USB modem support.
+# Fibocom FM350 USB modem support.
 modemmanager
 luci-proto-modemmanager
 libqmi
@@ -30,6 +30,11 @@ kmod-usb-net-rndis
 kmod-usb-net-cdc-ether
 kmod-usb-net-ipheth
 
+# MTK wireless UI.
+-iwinfo
+iwinfo-ucode
+luci-app-mtwifi-cfg
+
 # VPN.
 wireguard-tools
 kmod-wireguard
@@ -38,7 +43,7 @@ openvpn-openssl
 luci-app-openvpn
 tailscale
 
-# QoS, DNS, security, and monitoring.
+# QoS, DNS, security, monitoring.
 mwan3
 luci-app-mwan3
 sqm-scripts
@@ -53,7 +58,7 @@ nlbwmon
 luci-app-nlbwmon
 irqbalance
 
-# USB storage and sharing.
+# USB storage sharing.
 block-mount
 kmod-usb-storage
 kmod-fs-exfat
@@ -65,7 +70,7 @@ fdisk
 ksmbd-server
 luci-app-ksmbd
 
-# Debug and maintenance.
+# Debug maintenance.
 curl
 ca-bundle
 ca-certificates

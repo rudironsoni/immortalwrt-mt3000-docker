@@ -2,7 +2,9 @@ FROM debian:bookworm-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
         ack \
         antlr3 \
         asciidoc \
@@ -68,9 +70,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         wget \
         xz-utils \
         zlib1g-dev \
-        zstd \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+        zstd
 
 RUN useradd -m -s /bin/bash builder \
     && mkdir -p /work \

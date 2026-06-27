@@ -1,0 +1,75 @@
+#!/bin/sh
+
+set -u
+
+BOARD_LIB="${MT798X_BOARD_LIB:-/lib/functions/mt798x-board.sh}"
+
+if [ ! -r "$BOARD_LIB" ]; then
+	echo "Missing board helper library: $BOARD_LIB" >&2
+	exit 1
+fi
+
+. "$BOARD_LIB"
+
+value_len() {
+	printf '%s' "$1" | wc -c | tr -d ' '
+}
+
+usage() {
+	cat <<'EOF'
+Usage: mt798x-board-info <command>
+
+Commands:
+  summary        print non-secret board facts
+  factory        print non-secret factory-field visibility
+  private        print redacted private identifier visibility
+  wifi-defaults  print non-secret Wi-Fi default facts
+  ssid-2g        print derived/configured 2.4 GHz SSID
+  ssid-5g        print derived/configured 5 GHz SSID
+  wifi-key       print Wi-Fi key for first-boot consumers
+  country        print Wi-Fi country code
+EOF
+}
+
+case "${1:-}" in
+summary)
+	printf 'board=%s\n' "$(mt798x_board_name 2>/dev/null || true)"
+	printf 'model=%s\n' "$(mt798x_model_code)"
+	printf 'label_mac_present=%s\n' "$(mt798x_label_mac >/dev/null 2>&1 && echo yes || echo no)"
+	;;
+factory)
+	printf 'factory_device=%s\n' "$(mt798x_factory_dev 2>/dev/null || true)"
+	printf 'factory_wifi_key_0x40_len=%s\n' "$(value_len "$(mt798x_factory_key_field $((0x40)) 10 2>/dev/null || true)")"
+	printf 'factory_legacy_wifi_key_0x120_len=%s\n' "$(value_len "$(mt798x_factory_key_field $((0x120)) 32 2>/dev/null || true)")"
+	;;
+private)
+	mt798x_redacted_private_line sn
+	mt798x_redacted_private_line sn_bak
+	mt798x_redacted_private_line ddns
+	;;
+wifi-defaults)
+	printf 'ssid_2g=%s\n' "$(mt798x_ssid_2g)"
+	printf 'ssid_5g=%s\n' "$(mt798x_ssid_5g)"
+	printf 'country=%s\n' "$(mt798x_country_code)"
+	printf 'key_source=%s\n' "$(mt798x_wifi_key_source)"
+	;;
+ssid-2g)
+	mt798x_ssid_2g
+	;;
+ssid-5g)
+	mt798x_ssid_5g
+	;;
+wifi-key)
+	mt798x_wifi_key
+	;;
+country)
+	mt798x_country_code
+	;;
+''|-h|--help|help)
+	usage
+	;;
+*)
+	usage >&2
+	exit 1
+	;;
+esac
